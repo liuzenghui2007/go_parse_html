@@ -1,21 +1,73 @@
 package main
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
-	"github.com/gocolly/colly"
 	"net/http"
 	"os"
+	"strings"
 	"time"
-	"path/filepath"
+	"unicode"
+
+	"github.com/chromedp/chromedp"
 )
 
-func FetchAndSave(url string, fileName string, client *http.Client, headers map[string]string) error {
-	fmt.Printf("Creating file: %s\n", fileName)
-	
-	// 确保文件名是正确的路径格式
-	fileName = filepath.Clean(fileName)
-	
+type Row struct {
+	rank      string
+	nick      string
+	firstName string
+	category  string
+	followers string
+	country   string
+	engAuth   string
+	engAvg    string
+}
+
+func FetchAndSave(url, fileName string, client *http.Client, headers map[string]string) error {
+	fmt.Printf("Starting to fetch data from: %s\n", url)
+
+	// Create a new context
+	ctx, cancel := chromedp.NewContext(context.Background())
+	defer cancel()
+
+	// Set a timeout
+	ctx, cancel = context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	var rows []Row
+
+	// Run chromedp tasks
+	err := chromedp.Run(ctx,
+		// Set headers
+		chromedp.EmulateViewport(1920, 1080),
+		chromedp.Navigate(url),
+		chromedp.WaitVisible(`.table .row[data-v-bf890aa6]`),
+		// Extract data from all rows
+		chromedp.Evaluate(`
+			Array.from(document.querySelectorAll('.table .row[data-v-bf890aa6]')).map(row => ({
+				rank: row.querySelector('.row-cell.rank span[data-v-bf890aa6]')?.textContent.trim(),
+				nick: row.querySelector('.contributor__content-username')?.textContent.trim(),
+				firstName: row.querySelector('.contributor__content-fullname')?.textContent.trim(),
+				category: row.querySelector('.row-cell.category .tag__content')?.textContent.trim(),
+				followers: row.querySelector('.row-cell.subscribers')?.textContent.trim(),
+				country: row.querySelector('.row-cell.audience')?.textContent.trim(),
+				engAuth: row.querySelector('.row-cell.authentic')?.textContent.trim(),
+				engAvg: row.querySelector('.row-cell.engagement')?.textContent.trim()
+			}))
+		`, &rows),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to fetch page: %v", err)
+	}
+
+	if len(rows) == 0 {
+		return fmt.Errorf("no data found in page")
+	}
+
+	fmt.Printf("Found %d rows\n", len(rows))
+
+	// Create CSV file
 	file, err := os.Create(fileName)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %v", err)
@@ -34,85 +86,35 @@ func FetchAndSave(url string, fileName string, client *http.Client, headers map[
 		return fmt.Errorf("error writing headers: %v", err)
 	}
 
-	c := colly.NewCollector(
-		colly.UserAgent(headers["User-Agent"]),
-		colly.MaxDepth(1),
-		colly.AllowURLRevisit(),
-		colly.DisallowedDomains("www.google-analytics.com", "googleads.g.doubleclick.net"),
-	)
-
-	c.SetRequestTimeout(30 * time.Second)
-
-	c.OnRequest(func(r *colly.Request) {
-		for key, value := range headers {
-			r.Headers.Set(key, value)
-		}
-		fmt.Printf("Making request to: %s\n", r.URL.String())
-	})
-
-	rowCount := 0
-
-	c.OnHTML("div.table div.row", func(e *colly.HTMLElement) {
-		row := []string{
-			e.ChildText("div.rank"),
-			e.ChildText("div.nick"),
-			e.ChildText("div.Name"),
-			e.ChildText("div.category"),
-			e.ChildText("div.followers"),
-			e.ChildText("div.country"),
-			e.ChildText("div.engAuth"),
-			e.ChildText("div.engAvg"),
-		}
-
-		// 检查行是否为空
-		hasData := false
-		for _, field := range row {
-			if field != "" {
-				hasData = true
-				break
+	// Write data rows
+	for _, row := range rows {
+		// Process category string
+		var categoryString strings.Builder
+		for idx, val := range row.category {
+			if idx > 0 {
+				if unicode.IsUpper(val) && !unicode.IsUpper(rune(row.category[idx-1])) && unicode.IsLetter(val) {
+					categoryString.WriteString(" ")
+				}
 			}
+			categoryString.WriteRune(val)
 		}
 
-		if !hasData {
-			fmt.Printf("Skipping empty row\n")
-			return
+		record := []string{
+			row.rank,
+			row.nick,
+			row.firstName,
+			categoryString.String(),
+			row.followers,
+			row.country,
+			row.engAuth,
+			row.engAvg,
 		}
 
-		if err := writer.Write(row); err != nil {
-			fmt.Printf("Error writing row: %v\n", err)
-			return
+		if err := writer.Write(record); err != nil {
+			return fmt.Errorf("error writing row: %v", err)
 		}
-		rowCount++
-		if rowCount%10 == 0 {
-			fmt.Printf("Processed %d rows...\n", rowCount)
-			writer.Flush() // 定期刷新写入
-		}
-	})
-
-	c.OnResponse(func(r *colly.Response) {
-		fmt.Printf("Visited URL: %s (Status: %d)\n", r.Request.URL, r.StatusCode)
-		if r.StatusCode != 200 {
-			fmt.Printf("Response body: %s\n", string(r.Body))
-		}
-	})
-
-	c.OnError(func(r *colly.Response, err error) {
-		fmt.Printf("Error visiting %s: %v\n", r.Request.URL, err)
-		if r != nil {
-			fmt.Printf("Response body: %s\n", string(r.Body))
-		}
-	})
-
-	fmt.Printf("Starting to scrape URL: %s\n", url)
-	err = c.Visit(url)
-	if err != nil {
-		return fmt.Errorf("error visiting URL: %v", err)
 	}
 
-	if rowCount == 0 {
-		return fmt.Errorf("no data found for URL: %s", url)
-	}
-
-	fmt.Printf("Completed scraping. Total rows processed: %d\n", rowCount)
+	fmt.Printf("Successfully saved %d rows to %s\n", len(rows), fileName)
 	return nil
 }
