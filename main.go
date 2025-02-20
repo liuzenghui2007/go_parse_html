@@ -124,7 +124,8 @@ func main() {
 		}
 
 		url := baseURL + path
-		fileName := filepath.Join("results", strings.ReplaceAll(strings.ReplaceAll(category, " & ", "_"), " ", "_") + ".csv")
+		// Replace spaces and slashes with underscores in the file name
+		fileName := filepath.Join("results", strings.ReplaceAll(strings.ReplaceAll(category, " & ", "_"), "/", "_") + ".csv")
 
 		fmt.Printf("\n[%s] Starting to process category\n", category)
 		fmt.Printf("Using User-Agent: %s\n", headers["User-Agent"])
