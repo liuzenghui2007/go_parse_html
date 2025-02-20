@@ -1,128 +1,156 @@
 package main
 
 import (
-	"encoding/csv"
-	"github.com/gocolly/colly"
-	"log"
-	"os"
+	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
-	"unicode"
+	"math/rand"
+	"path/filepath"
 )
 
-type Row struct {
-	rank      string
-	nick      string
-	firstName string
-	category  string
-	followers string
-	country   string
-	engAuth   string
-	engAvg    string
-}
+func main() {
+	categories := map[string]string{
+		"Accessories & Jewellery": "/top-instagram-accessories-jewellery-united-states/",
+		"Adult content":           "/top-instagram-adult-content-united-states/",
+		"Alcohol":                 "/top-instagram-alcohol-united-states/",
+		"Animals":                 "/top-instagram-animals-united-states/",
+		"Architecture & Urban Design": "/top-instagram-architecture-urban-design-united-states/",
+		"Art/Artists":             "/top-instagram-art-artists-united-states/",
+		"Beauty":                  "/top-instagram-beauty-united-states/",
+		"Business & Careers":      "/top-instagram-business-careers-united-states/",
+		"Cars & Motorbikes":       "/top-instagram-cars-motorbikes-united-states/",
+		"Cinema & Actors/actresses": "/top-instagram-cinema-actors-actresses-united-states/",
+		"Clothing & Outfits":      "/top-instagram-clothing-outfits-united-states/",
+		"Comics & sketches":       "/top-instagram-comics-sketches-united-states/",
+		"Computers & Gadgets":     "/top-instagram-computers-gadgets-united-states/",
+		"Crypto":                  "/top-instagram-crypto-united-states/",
+		"DIY & Design":            "/top-instagram-diy-design-united-states/",
+		"Education":               "/top-instagram-education-united-states/",
+		"Extreme Sports & Outdoor activity": "/top-instagram-extreme-sports-outdoor-united-states/",
+		"Family":                  "/top-instagram-family-united-states/",
+		"Fashion":                 "/top-instagram-fashion-united-states/",
+		"Finance & Economics":     "/top-instagram-finance-economics-united-states/",
+		"Fitness & Gym":           "/top-instagram-fitness-gym-united-states/",
+		"Food & Cooking":          "/top-instagram-food-cooking-united-states/",
+		"Gaming":                  "/top-instagram-gaming-united-states/",
+		"Health & Medicine":       "/top-instagram-health-medicine-united-states/",
+		"Humor & Fun & Happiness": "/top-instagram-humor-fun-happiness-united-states/",
+		"Kids & Toys":             "/top-instagram-kids-toys-united-states/",
+		"Lifestyle":               "/top-instagram-lifestyle-united-states/",
+		"Literature & Journalism": "/top-instagram-literature-journalism-united-states/",
+		"Luxury":                  "/top-instagram-luxury-united-states/",
+		"Machinery & Technologies": "/top-instagram-machinery-technologies-united-states/",
+		"Management & Marketing":  "/top-instagram-management-marketing-united-states/",
+		"Mobile related":          "/top-instagram-mobile-related-united-states/",
+		"Modeling":                "/top-instagram-modeling-united-states/",
+		"Music":                   "/top-instagram-music-united-states/",
+		"NFT":                     "/top-instagram-nft-united-states/",
+		"Nature & landscapes":     "/top-instagram-nature-landscapes-united-states/",
+		"Photography":             "/top-instagram-photography-united-states/",
+		"Racing Sports":           "/top-instagram-racing-sports-united-states/",
+		"Science":                 "/top-instagram-science-united-states/",
+		"Shopping & Retail":       "/top-instagram-shopping-retail-united-states/",
+		"Shows":                   "/top-instagram-shows-united-states/",
+		"Sports with a ball":      "/top-instagram-sports-with-a-ball-united-states/",
+		"Sweets & Bakery":         "/top-instagram-sweets-bakery-united-states/",
+		"Tobacco & Smoking":       "/top-instagram-tobacco-smoking-united-states/",
+		"Trainers & Coaches":      "/top-instagram-trainers-coaches-united-states/",
+		"Travel":                  "/top-instagram-travel-united-states/",
+		"Water sports":            "/top-instagram-water-sports-united-states/",
+		"Winter sports":           "/top-instagram-winter-sports-united-states/",
+	}
 
-func FetchAndSave(url, fileName string) {
-	var Rows []Row
+	baseURL := "https://hypeauditor.com"
+	minDelay := time.Second * 10
+	maxDelay := time.Second * 20
 
-	c := colly.NewCollector(
-		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-			"AppleWebKit/537.36 (KHTML, like Gecko) " +
-			"Chrome/111.0.0.0 Safari/537.36"),
-		colly.Async(true), // Enable asynchronous requests
-	)
+	// 创建 transport
+	transport := &http.Transport{
+		MaxIdleConns:        10,
+		IdleConnTimeout:     30 * time.Second,
+		DisableCompression:  true,
+		TLSHandshakeTimeout: 20 * time.Second,
+	}
 
-	// Set a longer timeout
-	c.SetRequestTimeout(60 * time.Second)
+	// 可选的代理设置
+	proxyStr := "" // 这里可以设置代理地址，例如 "http://your-proxy-here"
+	if proxyStr != "" {
+		proxyURL, err := url.Parse(proxyStr)
+		if err != nil {
+			fmt.Printf("Warning: Invalid proxy URL: %v\n", err)
+		} else {
+			transport.Proxy = http.ProxyURL(proxyURL)
+			fmt.Printf("Using proxy: %s\n", proxyStr)
+		}
+	} else {
+		fmt.Println("No proxy configured, using direct connection")
+	}
 
-	// Limit the number of concurrent requests
-	c.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: 2,
-		Delay:       5 * time.Second, // Add a delay between requests
-	})
+	client := &http.Client{
+		Timeout: time.Second * 120,
+		Transport: transport,
+	}
 
-	c.OnHTML(".table .row[data-v-bf890aa6]", func(element *colly.HTMLElement) {
-		rank := element.ChildText(".row-cell.rank span[data-v-bf890aa6]")
-		nick := element.ChildText(".contributor__content-username")
-		firstName := element.ChildText(".contributor__content-fullname")
-		category := element.ChildText(".row-cell.category .tag__content")
-		followers := element.ChildText(".row-cell.subscribers")
-		country := element.ChildText(".row-cell.audience")
-		engAuth := element.ChildText(".row-cell.authentic")
-		engAvg := element.ChildText(".row-cell.engagement")
+	// 随机化 User-Agent
+	rand.Seed(time.Now().UnixNano())
+	userAgents := []string{
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+	}
 
-		var categoryString strings.Builder
-		for idx, val := range category {
-			if idx > 0 {
-				if unicode.IsUpper(val) && !unicode.IsUpper(rune(category[idx-1])) && unicode.IsLetter(val) {
-					categoryString.WriteString(" ")
-				}
+	fmt.Printf("Starting to process %d categories...\n", len(categories))
+
+	for category, path := range categories {
+		// 每次请求随机选择 User-Agent
+		headers := map[string]string{
+			"User-Agent": userAgents[rand.Intn(len(userAgents))],
+			"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+			"Accept-Language": "en-US,en;q=0.9",
+			"Accept-Encoding": "gzip, deflate, br",
+			"Cache-Control": "max-age=0",
+			"Connection": "keep-alive",
+			"Upgrade-Insecure-Requests": "1",
+			"Sec-Ch-Ua": "\"Chromium\";v=\"122\", \"Not(A:Brand\";v=\"24\", \"Google Chrome\";v=\"122\"",
+			"Sec-Ch-Ua-Mobile": "?0",
+			"Sec-Ch-Ua-Platform": "\"Windows\"",
+			"Sec-Fetch-Dest": "document",
+			"Sec-Fetch-Mode": "navigate",
+			"Sec-Fetch-Site": "none",
+			"Sec-Fetch-User": "?1",
+		}
+
+		url := baseURL + path
+		fileName := filepath.Join("results", strings.ReplaceAll(strings.ReplaceAll(category, " & ", "_"), " ", "_") + ".csv")
+
+		fmt.Printf("\n[%s] Starting to process category\n", category)
+		fmt.Printf("Using User-Agent: %s\n", headers["User-Agent"])
+		
+		maxRetries := 5
+		for retry := 0; retry < maxRetries; retry++ {
+			if retry > 0 {
+				waitTime := time.Second * time.Duration(retry*10)
+				fmt.Printf("[%s] Retry attempt %d/%d, waiting %v\n", category, retry+1, maxRetries, waitTime)
+				time.Sleep(waitTime)
 			}
-			categoryString.WriteRune(val)
+
+			err := FetchAndSave(url, fileName, client, headers)
+			if err == nil {
+				break
+			}
+			fmt.Printf("[%s] Error: %v\n", category, err)
+			if retry == maxRetries-1 {
+				fmt.Printf("[%s] Failed after %d attempts\n", category, maxRetries)
+			}
 		}
 
-		row := Row{
-			rank:      rank,
-			nick:      nick,
-			firstName: firstName,
-			category:  categoryString.String(),
-			followers: followers,
-			country:   country,
-			engAuth:   engAuth,
-			engAvg:    engAvg,
-		}
-
-		Rows = append(Rows, row)
-	})
-
-	c.OnError(func(r *colly.Response, err error) {
-		log.Printf("Request URL: %s failed with response: %v\nError: %v", r.Request.URL, r, err)
-	})
-
-	err := c.Visit(url)
-	if err != nil {
-		log.Fatal(err)
+		delay := minDelay + time.Duration(rand.Int63n(int64(maxDelay-minDelay)))
+		fmt.Printf("[%s] Waiting %v before next request\n", category, delay)
+		time.Sleep(delay)
 	}
 
-	c.Wait() // Wait for all asynchronous tasks to complete
-
-	if len(Rows) == 0 {
-		log.Println("No data found. Please check the selectors and the target URL.")
-		return
-	}
-
-	csvFile, csvErr := os.Create(fileName)
-	if csvErr != nil {
-		log.Fatalln("Failed to create the output CSV file", csvErr)
-	}
-	defer csvFile.Close()
-
-	writer := csv.NewWriter(csvFile)
-	defer writer.Flush()
-
-	headers := []string{
-		"rank",
-		"nick",
-		"Name",
-		"category",
-		"followers",
-		"country",
-		"engAuth",
-		"engAvg",
-	}
-	writer.Write(headers)
-
-	for _, row := range Rows {
-		record := []string{
-			row.rank,
-			row.nick,
-			row.firstName,
-			row.category,
-			row.followers,
-			row.country,
-			row.engAuth,
-			row.engAvg,
-		}
-		writer.Write(record)
-	}
-}
+	fmt.Println("\nAll categories processed!")
+} 
