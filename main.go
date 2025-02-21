@@ -28,7 +28,7 @@ func main() {
 		"Crypto":                  "/top-instagram-crypto-united-states/",
 		"DIY & Design":            "/top-instagram-diy-design-united-states/",
 		"Education":               "/top-instagram-education-united-states/",
-		"Extreme Sports & Outdoor activity": "/top-instagram-extreme-sports-outdoor-united-states/",
+		"Extreme Sports & Outdoor activity": "/top-instagram-extreme-sports-outdoor-activity-united-states/",
 		"Family":                  "/top-instagram-family-united-states/",
 		"Fashion":                 "/top-instagram-fashion-united-states/",
 		"Finance & Economics":     "/top-instagram-finance-economics-united-states/",
